@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * @file
+ * Main module file.
+ */
+
+function apps_limit_modulename() {
+  $module_name = basename(__FILE__, '.module');
+  return $module_name;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function apps_limit_menu() {
+  $items['admin/config/devconnect/apps-limit'] = array(
+    'title' => 'Apps Limit',
+    'description' => 'Settings controlling the number of apps allowed to be created',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('apps_limit_admin_form'),
+    'access arguments' => array('administer organization settings'),
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_init().
+ *
+ */
+function apps_limit_init() {
+  watchdog('apps_limit_', "Apps init", WATCHDOG_NOTICE);
+  if (!variable_get('apps_limit_count')) {
+    variable_set('apps_limit_count', 1);
+  }
+}
+
+/**
+ * Implements hook_devconnect_developer_app_presave().
+ *
+ * Checks RBAC access for given API Products.
+ */
+
+function apps_limit_devconnect_developer_app_presave(array &$form_state) {
+  global $user;
+
+  $app_entities = entity_load('developer_app', FALSE, array('mail' => $user->mail));
+
+  $apps_count = count($app_entities);
+  $limit = variable_get('apps_limit_count');
+
+  if ($apps_count < $limit) {
+    return TRUE;
+  } else {
+    drupal_set_message(t('You are only allowed to create @limit Apps!', array('@limit' => $limit)), 'error');
+    return FALSE;
+  }
+}
+
+/**
+ * Invoke hook_devconnect_developer_app_list_alter.
+ *
+ * Alter, remove from, or add to parameters in the developer app list.
+ *
+ * @param array $parameters
+ *   By default, $parameters will include the following members:
+ *     application_count (integer)
+ *     applications (array of associative arrays -- see below)
+ *     user (stdClass user object)
+ *   Each member of the applications array has the following keys:
+ *     app_name (string)
+ *     callback_url (string)
+ *     attributes (associative array of strings)
+ *     credential (associative array -- see documentation under hook_devconnect_developer_app_alter below)
+ *     delete_url (string)
+ *     edit_url (string)
+ *     raw_data (associative array returned from Edge)
+ */
+function apps_limit_devconnect_developer_app_list_alter(array &$parameters) {
+  $apps_count = $parameters['application_count'];
+  $limit = variable_get('apps_limit_count');
+
+  drupal_set_message(t('You have @apps_count Apps!', array('@apps_count' => $apps_count)), 'status');
+  drupal_set_message(t('You are allowed to create @limit Apps', array('@limit' => $limit)), 'status');
+}
+
+function apps_limit_devconnect_developer_app_save(array $results, array &$form_state) {
+  return TRUE;
+}
+
+
+/**
+ * Creates the App Limit admin form.
+ */
+function apps_limit_admin_form($form, &$form_state) {
+  $prefix = apps_limit_modulename();
+
+  $current_apps_count = variable_get('apps_limit_count');
+
+  drupal_set_message(t('Currently you are limited to @current_apps_count Apps!', array('@current_apps_count' => $current_apps_count)), 'status');
+  
+  $tprefix = '<div class=\'' . $prefix  . '\'>';
+  $tsuffix = '';
+  $fld_attributes = array('title' => t('This is the count of Apps allowed to be created'));
+  
+  $form = system_settings_form($form);
+  $form['apps_limit'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Apps Limit'),
+    '#access' => user_access('administer users'),
+  );
+  $form['apps_limit']['config_apps_count'] = array(
+    '#type' => 'select',
+    '#title' => t('Count'),
+    '#options' => drupal_map_assoc(array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 75, 100, 125, 150, 200, 250, 500)),
+    '#default_value' => $current_apps_count
+  );
+  $submit_handler_function_name = apps_limit_modulename() . '_admin_form_submit';
+  array_unshift($form['#submit'], $submit_handler_function_name);
+  return $form;
+}
+
+/**
+ * Updates variable 
+ */
+function apps_limit_admin_form_submit($form, &$form_state) {
+  $prefix = apiproduct_access_extended_modulename();
+
+  $new_limit = $form_state['values']['config_apps_count'];
+  variable_set('apps_limit_count', $new_limit );
+
+  // drupal_set_message(t('New limit is @new_limit Apps!', array('@new_limit' => $new_limit)), 'status');
+}
+
